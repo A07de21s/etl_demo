@@ -1,1 +1,4 @@
+/Users/a07de21s/Projects/etl_demo/src/main/java/com/bigdata/etl/mr/LogBeanWritable.java
 /Users/a07de21s/Projects/etl_demo/src/main/java/com/bigdata/etl/job/ParseLogJob.java
+/Users/a07de21s/Projects/etl_demo/src/main/java/com/bigdata/etl/mr/LogGenericWritable.java
+/Users/a07de21s/Projects/etl_demo/src/main/java/com/bigdata/etl/mr/LogFieldWritable.java
