@@ -125,14 +125,16 @@ public class ParseLogJob extends Configured implements Tool
                 String ip = (String)v.getObject("ip");
                 // String[] address = IPUtil.find(ip);
                 JSONObject addr = new JSONObject();
+
+                Configuration conf = context.getConfiguration();
                 /*
                 addr.put("country", address[0]);
                 addr.put("province", address[1]);
                 addr.put("city", address[2]);
                 */
-                addr.put("country", "CN");
-                addr.put("province", "YN");
-                addr.put("city", "KM");
+                addr.put("country", conf.get("country"));
+                addr.put("province", conf.get("province"));
+                addr.put("city", conf.get("city"));
 
                 JSONObject datum = JSON.parseObject(v.asJSONString());
                 datum.put("address", addr);
