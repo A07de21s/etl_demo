@@ -4,7 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.bigdata.etl.mr.LogFieldWritable;
 import com.bigdata.etl.mr.LogGenericWritable;
-import com.hadoop.compression.lzo.LzopCodec;
+// import com.bigdata.etl.utils.IPUtil;
+// import com.hadoop.compression.lzo.LzopCodec;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -22,6 +23,7 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
+import java.net.URI;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Map;
@@ -49,7 +51,6 @@ public class ParseLogJob extends Configured implements Tool
 
     public static class LogWritable extends LogGenericWritable
     {
-
         @Override
         protected String[] getFieldName() {
             return new String[] {"active_name", "session_id", "time_tag", "ip", "device_id", "req_url", "user_id", "product_id", "order_id"};
@@ -58,6 +59,7 @@ public class ParseLogJob extends Configured implements Tool
 
     public int run(String[] args) throws Exception {
         Configuration configuration = getConf();
+        configuration.addResource("mr.xml");
         Job job = Job.getInstance(configuration);
         job.setJarByClass(ParseLogJob.class);
         job.setJobName("parseLog");
@@ -67,6 +69,7 @@ public class ParseLogJob extends Configured implements Tool
         job.setMapOutputKeyClass(LongWritable.class);
         job.setMapOutputValueClass(LogWritable.class);
         job.setOutputKeyClass(Text.class);
+        // job.addCacheFile(new URI(configuration.get("ip.file.path")));
 
         FileInputFormat.addInputPath(job, new Path(args[0]));
         Path outputPath = new Path(args[1]);
@@ -107,12 +110,34 @@ public class ParseLogJob extends Configured implements Tool
 
     public static class LogReducer extends Reducer<LongWritable, LogGenericWritable, NullWritable, Text>
     {
+        /*
+        public void setup(Context context)
+        {
+            // IPUtil.load("17monipdb.datx");
+        }
+*/
+
         @Override
         public void reduce(LongWritable key, Iterable<LogGenericWritable> values, Context context) throws IOException, InterruptedException
         {
             for (LogGenericWritable v : values)
             {
-                context.write(null, new Text(v.asJSONString()));
+                String ip = (String)v.getObject("ip");
+                // String[] address = IPUtil.find(ip);
+                JSONObject addr = new JSONObject();
+                /*
+                addr.put("country", address[0]);
+                addr.put("province", address[1]);
+                addr.put("city", address[2]);
+                */
+                addr.put("country", "CN");
+                addr.put("province", "YN");
+                addr.put("city", "KM");
+
+                JSONObject datum = JSON.parseObject(v.asJSONString());
+                datum.put("address", addr);
+
+                context.write(null, new Text(datum.toJSONString()));
             }
         }
     }
