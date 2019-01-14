@@ -4,18 +4,6 @@
 <configuration>
     <property>
         <name>ip.file.path</name>
-        <value>/User/a07de21s/</value>
-    </property>
-    <property>
-        <name>country</name>
-        <value>CN</value>
-    </property>
-    <property>
-        <name>province</name>
-        <value>YN</value>
-    </property>
-    <property>
-        <name>city</name>
-        <value>KM</value>
+        <value>/Users/a07de21s/Projects/etl_demo/input/ipaddress.txt</value>
     </property>
 </configuration>

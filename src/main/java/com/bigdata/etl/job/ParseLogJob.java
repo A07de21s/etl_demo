@@ -1,10 +1,9 @@
 package com.bigdata.etl.job;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.bigdata.etl.mr.LogFieldWritable;
-import com.bigdata.etl.mr.LogGenericWritable;
-// import com.bigdata.etl.utils.IPUtil;
+import com.bigdata.etl.mr.*;
 // import com.hadoop.compression.lzo.LzopCodec;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -22,6 +21,8 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.net.URI;
 import java.text.ParseException;
@@ -66,10 +67,12 @@ public class ParseLogJob extends Configured implements Tool
         job.setMapperClass(LogMapper.class);
         // job.setNumReduceTasks(0);
         job.setReducerClass(LogReducer.class);
-        job.setMapOutputKeyClass(LongWritable.class);
+        job.setMapOutputKeyClass(TextLongWritable.class);
+        job.setGroupingComparatorClass(TextLongGroupComparator.class);
+        job.setPartitionerClass(TextLongPartitioner.class);
         job.setMapOutputValueClass(LogWritable.class);
         job.setOutputKeyClass(Text.class);
-        // job.addCacheFile(new URI(configuration.get("ip.file.path")));
+        job.addCacheFile(new URI(configuration.get("ip.file.path")));
 
         FileInputFormat.addInputPath(job, new Path(args[0]));
         Path outputPath = new Path(args[1]);
@@ -91,7 +94,7 @@ public class ParseLogJob extends Configured implements Tool
         return 0;
     }
 
-    public static class LogMapper extends Mapper<LongWritable, Text, LongWritable, LogGenericWritable>
+    public static class LogMapper extends Mapper<LongWritable, Text, TextLongWritable, LogGenericWritable>
     {
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException
@@ -99,7 +102,14 @@ public class ParseLogJob extends Configured implements Tool
             try
             {
                 LogGenericWritable parseLog = parseLog(value.toString());
-                context.write(key, parseLog);
+                String session = (String)parseLog.getObject("session_id");
+                Long timeTag = (Long)parseLog.getObject("time_tag");
+
+                TextLongWritable outKey = new TextLongWritable();
+                outKey.setText(new Text(session));
+                outKey.setCompareValue(new LongWritable(timeTag));
+
+                context.write(outKey, parseLog);
             }
             catch (ParseException e)
             {
@@ -108,36 +118,45 @@ public class ParseLogJob extends Configured implements Tool
         }
     }
 
-    public static class LogReducer extends Reducer<LongWritable, LogGenericWritable, NullWritable, Text>
+    public static class LogReducer extends Reducer<TextLongWritable, LogGenericWritable, NullWritable, Text>
     {
-        /*
-        public void setup(Context context)
+        private JSONArray actionPath = new JSONArray();
+        private Text sessionID;
+
+        StringBuilder stringBuilder = new StringBuilder();
+        public void setup(Context context) throws IOException
         {
-            // IPUtil.load("17monipdb.datx");
+            FileReader fileReader = new FileReader("ipaddress.txt");
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            String str = bufferedReader.readLine();
+            stringBuilder.append(str);
         }
-*/
 
-        @Override
-        public void reduce(LongWritable key, Iterable<LogGenericWritable> values, Context context) throws IOException, InterruptedException
+        public void reduce(TextLongWritable key, Iterable<LogGenericWritable> values, Context context) throws IOException, InterruptedException
         {
-            for (LogGenericWritable v : values)
+            Text sid = key.getText();
+            if(sessionID == null || !sid.equals(sessionID))
             {
-                String ip = (String)v.getObject("ip");
-                // String[] address = IPUtil.find(ip);
-                JSONObject addr = new JSONObject();
+                sessionID = new Text(sid);
+                actionPath.clear();
+            }
 
-                Configuration conf = context.getConfiguration();
-                /*
+            for(LogGenericWritable v : values)
+            {
+                String[] address = StringUtils.split(stringBuilder.toString(), ".");
+                JSONObject addr = new JSONObject();
                 addr.put("country", address[0]);
                 addr.put("province", address[1]);
                 addr.put("city", address[2]);
-                */
-                addr.put("country", conf.get("country"));
-                addr.put("province", conf.get("province"));
-                addr.put("city", conf.get("city"));
+
+                String activeName = (String)v.getObject("active_name");
+                String reqUrl = (String)v.getObject("req_url");
+                String pathUnit = "pageview".equals(activeName) ? reqUrl : activeName;
+                actionPath.add(pathUnit);
 
                 JSONObject datum = JSON.parseObject(v.asJSONString());
                 datum.put("address", addr);
+                datum.put("action_path", actionPath);
 
                 context.write(null, new Text(datum.toJSONString()));
             }
