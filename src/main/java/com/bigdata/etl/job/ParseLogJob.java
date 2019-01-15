@@ -101,6 +101,7 @@ public class ParseLogJob extends Configured implements Tool
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException
         {
+            Counter errorCounter = context.getCounter("Log Error", "Parse Error");
             try
             {
                 LogGenericWritable parseLog = parseLog(value.toString());
