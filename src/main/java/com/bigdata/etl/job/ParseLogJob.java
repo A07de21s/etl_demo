@@ -11,11 +11,11 @@ import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.CombineTextInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
@@ -25,13 +25,12 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.net.URI;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Map;
 
 public class ParseLogJob extends Configured implements Tool
 {
-    public static LogGenericWritable parseLog(String row) throws ParseException
+    public static LogGenericWritable parseLog(String row) throws Exception
     {
         String[] logPart = StringUtils.split(row, "\u1111");
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
@@ -54,29 +53,32 @@ public class ParseLogJob extends Configured implements Tool
     {
         @Override
         protected String[] getFieldName() {
-            return new String[] {"active_name", "session_id", "time_tag", "ip", "device_id", "req_url", "user_id", "product_id", "order_id"};
+            return new String[] {"active_name", "session_id", "time_tag", "ip", "device_id", "req_url", "user_id", "product_id", "order_id", "error_flag", "error_log"};
         }
     }
 
-    public int run(String[] args) throws Exception {
+    public int run(String[] args) throws Exception
+    {
         Configuration configuration = getConf();
         configuration.addResource("mr.xml");
         Job job = Job.getInstance(configuration);
         job.setJarByClass(ParseLogJob.class);
         job.setJobName("parseLog");
         job.setMapperClass(LogMapper.class);
-        // job.setNumReduceTasks(0);
         job.setReducerClass(LogReducer.class);
+        job.setInputFormatClass(CombineTextInputFormat.class);
         job.setMapOutputKeyClass(TextLongWritable.class);
         job.setGroupingComparatorClass(TextLongGroupComparator.class);
         job.setPartitionerClass(TextLongPartitioner.class);
         job.setMapOutputValueClass(LogWritable.class);
         job.setOutputKeyClass(Text.class);
+        job.setOutputFormatClass(LogOutputFormat.class);
         job.addCacheFile(new URI(configuration.get("ip.file.path")));
 
         FileInputFormat.addInputPath(job, new Path(args[0]));
         Path outputPath = new Path(args[1]);
         FileOutputFormat.setOutputPath(job, outputPath);
+
         // FileOutputFormat.setCompressOutput(job, true);
         // FileOutputFormat.setOutputCompressorClass(job, LzopCodec.class);
 
@@ -111,14 +113,20 @@ public class ParseLogJob extends Configured implements Tool
 
                 context.write(outKey, parseLog);
             }
-            catch (ParseException e)
+            catch (Exception e)
             {
-                e.printStackTrace();
+                LogGenericWritable v = new LogWritable();
+                v.put("error_flag", new LogFieldWritable("error"));
+                v.put("error_log", new LogFieldWritable(value));
+                TextLongWritable outKey = new TextLongWritable();
+                int randomKey = (int)(Math.random() * 100);
+                outKey.setText(new Text("error" + randomKey));
+                context.write(outKey, v);
             }
         }
     }
 
-    public static class LogReducer extends Reducer<TextLongWritable, LogGenericWritable, NullWritable, Text>
+    public static class LogReducer extends Reducer<TextLongWritable, LogGenericWritable, Text, Text>
     {
         private JSONArray actionPath = new JSONArray();
         private Text sessionID;
@@ -143,22 +151,27 @@ public class ParseLogJob extends Configured implements Tool
 
             for(LogGenericWritable v : values)
             {
-                String[] address = StringUtils.split(stringBuilder.toString(), ".");
-                JSONObject addr = new JSONObject();
-                addr.put("country", address[0]);
-                addr.put("province", address[1]);
-                addr.put("city", address[2]);
-
-                String activeName = (String)v.getObject("active_name");
-                String reqUrl = (String)v.getObject("req_url");
-                String pathUnit = "pageview".equals(activeName) ? reqUrl : activeName;
-                actionPath.add(pathUnit);
-
                 JSONObject datum = JSON.parseObject(v.asJSONString());
-                datum.put("address", addr);
-                datum.put("action_path", actionPath);
+                if(v.getObject("error_flag") == null)
+                {
+                    String[] address = StringUtils.split(stringBuilder.toString(), ".");
+                    JSONObject addr = new JSONObject();
+                    addr.put("country", address[0]);
+                    addr.put("province", address[1]);
+                    addr.put("city", address[2]);
 
-                context.write(null, new Text(datum.toJSONString()));
+                    String activeName = (String)v.getObject("active_name");
+                    String reqUrl = (String)v.getObject("req_url");
+                    String pathUnit = "pageview".equals(activeName) ? reqUrl : activeName;
+                    actionPath.add(pathUnit);
+
+
+                    datum.put("address", addr);
+                    datum.put("action_path", actionPath);
+                }
+
+                String outputKey = v.getObject("error_flag") == null ? "part" : "error/part";
+                context.write(new Text(outputKey), new Text(datum.toJSONString()));
             }
         }
     }
