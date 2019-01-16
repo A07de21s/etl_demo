@@ -117,6 +117,7 @@ public class ParseLogJob extends Configured implements Tool
             }
             catch (Exception e)
             {
+                errorCounter.increment(1);
                 LogGenericWritable v = new LogWritable();
                 v.put("error_flag", new LogFieldWritable("error"));
                 v.put("error_log", new LogFieldWritable(value));
@@ -132,8 +133,8 @@ public class ParseLogJob extends Configured implements Tool
     {
         private JSONArray actionPath = new JSONArray();
         private Text sessionID;
+        private StringBuilder stringBuilder = new StringBuilder();
 
-        StringBuilder stringBuilder = new StringBuilder();
         public void setup(Context context) throws IOException
         {
             FileReader fileReader = new FileReader("ipaddress.txt");
